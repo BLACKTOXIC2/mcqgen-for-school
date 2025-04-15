@@ -39,6 +39,8 @@ export default function TeachersPage() {
     classes: ''
   })
   const [isLoading, setIsLoading] = useState(false)
+  const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -136,6 +138,46 @@ export default function TeachersPage() {
     } catch (error: any) {
       console.error('Error deleting teacher:', error)
       alert(`Error: ${error.message}`)
+    }
+  }
+
+  const handleEditTeacher = (teacher: Teacher) => {
+    setEditingTeacher(teacher)
+    setIsEditModalOpen(true)
+  }
+
+  const handleUpdateTeacher = async () => {
+    if (!editingTeacher) return
+
+    try {
+      setIsLoading(true)
+      
+      const { data, error } = await supabase
+        .from('teachers')
+        .update({
+          name: editingTeacher.name,
+          email: editingTeacher.email,
+          subjects: editingTeacher.subjects,
+          classes: editingTeacher.classes
+        })
+        .eq('id', editingTeacher.id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      if (data) {
+        setTeachers(teachers.map(teacher => 
+          teacher.id === editingTeacher.id ? data : teacher
+        ))
+        setIsEditModalOpen(false)
+        setEditingTeacher(null)
+      }
+    } catch (error: any) {
+      console.error('Error updating teacher:', error)
+      alert(`Error: ${error.message}`)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -244,6 +286,99 @@ export default function TeachersPage() {
                   disabled={isLoading}
                 >
                   {isLoading ? 'Adding...' : 'Add Teacher'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Teacher Modal */}
+      {isEditModalOpen && editingTeacher && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">Edit Teacher</h3>
+              <button
+                onClick={() => {
+                  setIsEditModalOpen(false)
+                  setEditingTeacher(null)
+                }}
+                className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={editingTeacher.name}
+                  onChange={(e) => setEditingTeacher({ ...editingTeacher, name: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={editingTeacher.email}
+                  onChange={(e) => setEditingTeacher({ ...editingTeacher, email: e.target.value })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Subjects (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={editingTeacher.subjects.join(', ')}
+                  onChange={(e) => setEditingTeacher({ 
+                    ...editingTeacher, 
+                    subjects: e.target.value.split(',').map(s => s.trim()) 
+                  })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Classes (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={editingTeacher.classes.join(', ')}
+                  onChange={(e) => setEditingTeacher({ 
+                    ...editingTeacher, 
+                    classes: e.target.value.split(',').map(c => c.trim()) 
+                  })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => {
+                    setIsEditModalOpen(false)
+                    setEditingTeacher(null)
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                  disabled={isLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdateTeacher}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isLoading}
+                >
+                  {isLoading ? 'Updating...' : 'Update Teacher'}
                 </button>
               </div>
             </div>
@@ -379,11 +514,17 @@ export default function TeachersPage() {
                             {teacher.classes?.join(', ') || 'Not assigned'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                            <button className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4">
-                              Edit
+                            <button 
+                              onClick={() => handleEditTeacher(teacher)}
+                              className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-4"
+                            >
+                              <PencilIcon className="h-5 w-5 inline" />
                             </button>
-                            <button className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">
-                              Delete
+                            <button 
+                              onClick={() => handleDeleteTeacher(teacher.id)}
+                              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+                            >
+                              <TrashIcon className="h-5 w-5 inline" />
                             </button>
                           </td>
                         </tr>
