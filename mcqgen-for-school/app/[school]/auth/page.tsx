@@ -1,33 +1,94 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { use } from 'react';
 
-export default function AuthPage({ params }: { params: { school: string } }) {
+export default function AuthPage({ params }: { params: Promise<{ school: string }> }) {
+  const resolvedParams = use(params);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const supabase = createClientComponentClient();
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        router.push(`/${resolvedParams.school}/dashboard`);
+      }
+    };
+    checkSession();
+  }, [resolvedParams.school, router, supabase.auth]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      // First authenticate with Supabase
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) throw error;
-
-      if (data.user) {
-        router.push(`/${params.school}/dashboard`);
+      if (authError) {
+        throw new Error('Invalid email or password');
       }
+
+      if (!authData.user) {
+        throw new Error('Authentication failed');
+      }
+
+      // Then check if the school exists and teacher belongs to it
+      const { data: schools, error: schoolError } = await supabase
+        .from('schools')
+        .select('id')
+        .ilike('name', resolvedParams.school);
+
+      if (schoolError) {
+        throw new Error('Error checking school: ' + schoolError.message);
+      }
+
+      if (!schools || schools.length === 0) {
+        throw new Error('School not found. Please check the school name.');
+      }
+
+      if (schools.length > 1) {
+        throw new Error('Multiple schools found with this name. Please contact support.');
+      }
+
+      const schoolData = schools[0];
+
+      // Check if the teacher belongs to this school
+      const { data: teacherData, error: teacherError } = await supabase
+        .from('teachers')
+        .select('*')
+        .eq('email', authData.user.email)
+        .eq('school_id', schoolData.id)
+        .single();
+
+      if (teacherError) {
+        throw new Error('Error checking teacher: ' + teacherError.message);
+      }
+
+      if (!teacherData) {
+        throw new Error('You do not have access to this school');
+      }
+
+      // If all checks pass, redirect to dashboard
+      router.push(`/${resolvedParams.school}/dashboard`);
     } catch (error: any) {
+      console.error('Login error:', error);
       setError(error.message);
+      // Sign out if authentication failed
+      await supabase.auth.signOut();
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -44,7 +105,7 @@ export default function AuthPage({ params }: { params: { school: string } }) {
             Teacher Login
           </h2>
           <p className="mt-2 text-sm text-gray-600">
-            Welcome to <span className="font-semibold text-indigo-600">{params.school.toUpperCase()}</span>
+            Welcome to <span className="font-semibold text-indigo-600">{resolvedParams.school.toUpperCase()}</span>
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
@@ -62,6 +123,7 @@ export default function AuthPage({ params }: { params: { school: string } }) {
                 placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                disabled={isLoading}
               />
             </div>
             <div>
@@ -77,6 +139,7 @@ export default function AuthPage({ params }: { params: { school: string } }) {
                 placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                disabled={isLoading}
               />
             </div>
           </div>
@@ -99,9 +162,10 @@ export default function AuthPage({ params }: { params: { school: string } }) {
           <div>
             <button
               type="submit"
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out transform hover:scale-[1.02]"
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isLoading}
             >
-              Sign in
+              {isLoading ? 'Signing in...' : 'Sign in'}
             </button>
           </div>
         </form>
