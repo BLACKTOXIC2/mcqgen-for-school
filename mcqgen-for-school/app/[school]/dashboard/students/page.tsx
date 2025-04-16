@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
+import { use } from 'react';
 
 interface Student {
   id: string;
@@ -22,18 +23,25 @@ interface Class {
   school_id: string;
 }
 
+interface School {
+  id: string;
+  name: string;
+}
+
 interface PageProps {
-  params: {
+  params: Promise<{
     school: string;
-  };
+  }>;
 }
 
 export default function StudentsPage({ params }: PageProps) {
+  const resolvedParams = use(params);
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [schoolId, setSchoolId] = useState<string | null>(null);
   const router = useRouter();
   const supabase = createClientComponentClient();
 
@@ -48,17 +56,30 @@ export default function StudentsPage({ params }: PageProps) {
         if (userError) throw userError;
         
         if (!user) {
-          router.push(`/${params.school}/auth`);
+          router.push(`/${resolvedParams.school}/auth`);
           return;
         }
 
-        console.log('Fetching data for school:', params.school);
+        // First, get the school ID from the school name
+        const { data: schoolData, error: schoolError } = await supabase
+          .from('schools')
+          .select('id')
+          .eq('name', resolvedParams.school)
+          .single();
+
+        if (schoolError) throw schoolError;
+        if (!schoolData) {
+          throw new Error('School not found');
+        }
+
+        setSchoolId(schoolData.id);
+        console.log('School ID:', schoolData.id);
 
         // Fetch classes for the current school
         const { data: classesData, error: classesError } = await supabase
           .from('classes')
           .select('*')
-          .eq('school_id', params.school);
+          .eq('school_id', schoolData.id);
 
         if (classesError) throw classesError;
         console.log('Classes data:', classesData);
@@ -68,7 +89,7 @@ export default function StudentsPage({ params }: PageProps) {
         const { data: studentsData, error: studentsError } = await supabase
           .from('students')
           .select('*')
-          .eq('school_id', params.school);
+          .eq('school_id', schoolData.id);
 
         if (studentsError) throw studentsError;
         console.log('Students data:', studentsData);
@@ -82,7 +103,7 @@ export default function StudentsPage({ params }: PageProps) {
     };
 
     fetchData();
-  }, [params.school, router, supabase]);
+  }, [resolvedParams.school, router, supabase]);
 
   const filteredStudents = selectedClass
     ? students.filter(student => student.class_id === selectedClass)
